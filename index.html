@@ -523,6 +523,51 @@ html, body {
   var PREVIEW = location.search.indexOf('preview') !== -1;
   var started = false;
 
+  // ---- Option A: auto-resize from iClosed height messages ----
+  // iClosed lives on app.iclosed.io, so we cannot measure the form from this page
+  // (cross-origin). IF iClosed broadcasts its height via postMessage, we grow the
+  // embed to match so the form never inner-scrolls. Purely additive: if no height
+  // message ever arrives, nothing changes and the min-height floor below still holds.
+  var BASE_MIN_HEIGHT = 855; // keep in sync with #iclosed-embed min-height in the CSS
+
+  // Pull a plausible pixel height out of whatever shape iClosed sends:
+  // a raw number, a numeric string, a JSON string, or an object with a height field.
+  function parseHeight(data) {
+    var obj = data;
+    if (typeof obj === 'number') return obj;
+    if (typeof obj === 'string') {
+      var s = obj.trim();
+      if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+      try { obj = JSON.parse(s); } catch (e) { return null; }
+    }
+    if (obj && typeof obj === 'object') {
+      var keys = ['height', 'scrollHeight', 'offsetHeight', 'docHeight', 'iframeHeight', 'frameHeight'];
+      for (var i = 0; i < keys.length; i++) {
+        var v = obj[keys[i]];
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v)) return parseFloat(v);
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener('message', function (e) {
+    // Only trust messages from iClosed's domain.
+    var host;
+    try { host = new URL(e.origin).hostname; } catch (x) { return; }
+    if (host !== 'app.iclosed.io' && host !== 'iclosed.io' && !/\.iclosed\.io$/.test(host)) return;
+
+    // DIAGNOSTIC: log everything iClosed sends so we can confirm whether height is
+    // broadcast and in what shape. Safe to delete this console.log once verified.
+    try { console.log('[iClosed message]', e.data); } catch (x) {}
+
+    var h = parseHeight(e.data);
+    if (h && h > 200) {
+      var box = document.getElementById('iclosed-embed');
+      if (box) box.style.minHeight = Math.max(Math.ceil(h), BASE_MIN_HEIGHT) + 'px';
+    }
+  }, false);
+
   // Build the iClosed embed URL with tracking params pulled from the page URL.
   // For each subid, use a directly-passed subid first, then fall back to the UTM.
   // This way it works whether the ad URL carries subid1/2/3 or utm_source/medium/campaign.
