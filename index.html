@@ -530,22 +530,34 @@ html, body {
   // message ever arrives, nothing changes and the min-height floor below still holds.
   var BASE_MIN_HEIGHT = 855; // keep in sync with #iclosed-embed min-height in the CSS
 
-  // Pull a plausible pixel height out of whatever shape iClosed sends:
-  // a raw number, a numeric string, a JSON string, or an object with a height field.
+  // Pull a plausible pixel height out of whatever shape iClosed sends.
+  // Confirmed format: { type: 'iclosed.widget_height', height: '930px' }.
+  // We stay tolerant: a raw number, a numeric/px string, a JSON string, or an
+  // object carrying a height field all resolve to a number.
+  function toNum(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    if (typeof v === 'string') {
+      var n = parseFloat(v); // parseFloat('930px') === 930
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  }
+
   function parseHeight(data) {
     var obj = data;
     if (typeof obj === 'number') return obj;
     if (typeof obj === 'string') {
       var s = obj.trim();
-      if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+      if (/^\d/.test(s)) return toNum(s); // bare "930" or "930px"
       try { obj = JSON.parse(s); } catch (e) { return null; }
     }
     if (obj && typeof obj === 'object') {
       var keys = ['height', 'scrollHeight', 'offsetHeight', 'docHeight', 'iframeHeight', 'frameHeight'];
       for (var i = 0; i < keys.length; i++) {
-        var v = obj[keys[i]];
-        if (typeof v === 'number') return v;
-        if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v)) return parseFloat(v);
+        if (keys[i] in obj) {
+          var h = toNum(obj[keys[i]]);
+          if (h !== null) return h;
+        }
       }
     }
     return null;
